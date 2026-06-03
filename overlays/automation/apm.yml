@@ -1,6 +1,6 @@
-name: learn-ai
+name: automation
 version: 0.1.0
-description: AI Academy plugin from agency-microsoft/playground
+description: Automation plugins from the awesome-copilot marketplace
 author: Igor Menkov
 # Which agent platforms to deploy to.
 # Resolution order: --target flag > this field > auto-detect from filesystem.
@@ -9,7 +9,9 @@ targets:
 - copilot
 dependencies:
   apm:
-    - agency-microsoft/playground/plugins/ai-academy
+    - github/awesome-copilot/plugins/automate-this
+    - ChromeDevTools/chrome-devtools-mcp
+    - github/awesome-copilot/plugins/testing-automation
   mcp: []
 includes: auto
 devDependencies:

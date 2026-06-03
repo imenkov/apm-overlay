@@ -1,0 +1,40 @@
+lockfile_version: '1'
+generated_at: '2026-06-03T11:28:48.692032+00:00'
+apm_version: 0.16.1
+dependencies:
+- repo_url: github/awesome-copilot
+  host: github.com
+  resolved_commit: 776d84143238cb91f7242665f188887b9e8d2aa9
+  virtual_path: skills/cli-mastery
+  is_virtual: true
+  package_type: claude_skill
+  deployed_files:
+  - .agents/skills/cli-mastery
+  content_hash: sha256:d4d05bf1f82a53a8388277c37a3f0601e7834a3973c3c6a9ede08a4f6c0dac12
+- repo_url: github/awesome-copilot
+  host: github.com
+  resolved_commit: 776d84143238cb91f7242665f188887b9e8d2aa9
+  virtual_path: skills/commit-message-storyteller
+  is_virtual: true
+  package_type: claude_skill
+  deployed_files:
+  - .agents/skills/commit-message-storyteller
+  content_hash: sha256:12d806f64f59f5df9301f6a283f034be58d883c20bf0954d6a2ab4e81512c5d8
+- repo_url: github/awesome-copilot
+  host: github.com
+  resolved_commit: 776d84143238cb91f7242665f188887b9e8d2aa9
+  virtual_path: skills/first-ask
+  is_virtual: true
+  package_type: claude_skill
+  deployed_files:
+  - .agents/skills/first-ask
+  content_hash: sha256:5131fd3d738563429409476b2e0062d160e81a315d18b42bdd1f5675848bbca5
+- repo_url: github/awesome-copilot
+  host: github.com
+  resolved_commit: 776d84143238cb91f7242665f188887b9e8d2aa9
+  virtual_path: skills/git-commit
+  is_virtual: true
+  package_type: claude_skill
+  deployed_files:
+  - .agents/skills/git-commit
+  content_hash: sha256:2607fc60629b82b257136dd2a7a373f0a4466c0b49df7746d845d59313c99b21

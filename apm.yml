@@ -1,0 +1,20 @@
+name: apm-overlay
+version: 0.1.0
+description: APM overlay library project
+author: Igor Menkov
+# Which agent platforms to deploy to.
+# Resolution order: --target flag > this field > auto-detect from filesystem.
+# Accepted values: copilot, claude, cursor, opencode, codex, gemini, windsurf, all
+targets:
+- copilot
+dependencies:
+  apm:
+    - github/awesome-copilot/skills/cli-mastery
+    - github/awesome-copilot/skills/commit-message-storyteller
+    - github/awesome-copilot/skills/first-ask
+    - github/awesome-copilot/skills/git-commit
+  mcp: []
+includes: auto
+devDependencies:
+  apm: []
+scripts: {}
