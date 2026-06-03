@@ -1,0 +1,23 @@
+name: docs-design
+version: 0.1.0
+description: Documentation writing, designing, and brainstorming technical solutions plugins from the awesome-copilot marketplace
+author: Igor Menkov
+# Which agent platforms to deploy to.
+# Resolution order: --target flag > this field > auto-detect from filesystem.
+# Accepted values: copilot, claude, cursor, opencode, codex, gemini, windsurf, all
+targets:
+- copilot
+dependencies:
+  apm:
+    - github/awesome-copilot/plugins/project-documenter
+    - github/awesome-copilot/plugins/eyeball
+    - github/awesome-copilot/plugins/napkin
+    - github/awesome-copilot/plugins/technical-spike
+    - github/awesome-copilot/agents/adr-generator.agent.md
+    - github/awesome-copilot/skills/documentation-writer
+    - figma/mcp-server-guide
+  mcp: []
+includes: auto
+devDependencies:
+  apm: []
+scripts: {}
