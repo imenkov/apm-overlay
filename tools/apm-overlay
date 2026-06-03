@@ -1,0 +1,332 @@
+#!/usr/bin/env python3
+"""apm-overlay — manage stackable overlays of apm packages.
+
+An overlay is a regular apm project directory (apm.yml, optionally with
+plugin.json) whose `dependencies` section declares the packages the overlay
+contributes. The `install` subcommand adds those packages to the active scope
+(project or ~/.apm/) via stock `apm install`; `uninstall` removes only the
+packages this overlay actually added, leaving the baseline intact.
+
+Library discovery: $APM_OVERLAYS_DIR (default: ~/.apm/overlays/).
+State files:
+    global  -> ~/.apm/overlays.state.json
+    project -> <cwd>/apm.overlays.json
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Iterable
+
+import click
+import yaml
+
+__version__ = "0.1.0"
+
+DEFAULT_OVERLAYS_DIR = Path.home() / ".apm" / "overlays"
+GLOBAL_APM_DIR = Path.home() / ".apm"
+GLOBAL_STATE_FILE = GLOBAL_APM_DIR / "overlays.state.json"
+PROJECT_STATE_FILENAME = "apm.overlays.json"
+
+
+# ---------- paths ----------
+
+def overlays_dir() -> Path:
+    raw = os.environ.get("APM_OVERLAYS_DIR")
+    return Path(raw).expanduser() if raw else DEFAULT_OVERLAYS_DIR
+
+
+def state_file(scope_global: bool) -> Path:
+    return GLOBAL_STATE_FILE if scope_global else Path.cwd() / PROJECT_STATE_FILENAME
+
+
+def scope_label(scope_global: bool) -> str:
+    return "global (~/.apm/)" if scope_global else f"project ({Path.cwd()})"
+
+
+def active_apm_yml(scope_global: bool) -> Path:
+    return (GLOBAL_APM_DIR if scope_global else Path.cwd()) / "apm.yml"
+
+
+# ---------- io helpers ----------
+
+def load_yaml(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    try:
+        with path.open() as f:
+            return yaml.safe_load(f) or {}
+    except yaml.YAMLError as e:
+        raise click.ClickException(f"Failed to parse YAML at {path}: {e}")
+
+
+def load_state(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    try:
+        with path.open() as f:
+            return json.load(f) or {}
+    except json.JSONDecodeError as e:
+        raise click.ClickException(f"Corrupt state file {path}: {e}")
+
+
+def save_state(path: Path, state: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with tmp.open("w") as f:
+        json.dump(state, f, indent=2, sort_keys=True)
+    tmp.replace(path)
+
+
+# ---------- overlay resolution ----------
+
+def overlay_path(name: str) -> Path:
+    base = overlays_dir()
+    if not base.exists():
+        raise click.ClickException(
+            f"Overlays directory does not exist: {base}\n"
+            f"Set APM_OVERLAYS_DIR or create the directory."
+        )
+    p = base / name
+    manifest = p / "apm.yml"
+    if not manifest.exists():
+        raise click.ClickException(
+            f"Overlay '{name}' not found (expected apm.yml at {manifest})."
+        )
+    return p
+
+
+def extract_deps(apm_yml_data: dict) -> tuple[list[str], list[str]]:
+    """Return (apm_deps, mcp_deps) as deduped, order-preserving lists of strings."""
+    deps = (apm_yml_data or {}).get("dependencies", {}) or {}
+    raw_apm = deps.get("apm") or []
+    raw_mcp = deps.get("mcp") or []
+
+    def norm(item) -> str:
+        if isinstance(item, str):
+            return item.strip()
+        if isinstance(item, dict):
+            for key in ("name", "package", "repo"):
+                if key in item and isinstance(item[key], str):
+                    return item[key].strip()
+        return ""
+
+    def dedup(items: Iterable) -> list[str]:
+        seen, out = set(), []
+        for raw in items:
+            s = norm(raw)
+            if s and s not in seen:
+                seen.add(s)
+                out.append(s)
+        return out
+
+    return dedup(raw_apm), dedup(raw_mcp)
+
+
+# ---------- apm runner ----------
+
+def run_apm(args: list[str], dry_run: bool, verbose: bool) -> int:
+    cmd = ["apm"] + args
+    if dry_run:
+        click.echo("[dry-run] " + " ".join(cmd))
+        return 0
+    if verbose:
+        click.echo("$ " + " ".join(cmd))
+    apm_bin = shutil.which("apm")
+    if not apm_bin:
+        raise click.ClickException("`apm` not found on PATH.")
+    return subprocess.call(cmd)
+
+
+# ---------- CLI ----------
+
+@click.group()
+@click.version_option(__version__, prog_name="apm-overlay")
+def cli():
+    """apm-overlay — manage stackable overlays of apm packages.
+
+    An overlay is a regular apm project (directory with apm.yml) whose
+    'dependencies' section declares packages the overlay contributes.
+    `install` adds those packages via `apm install`; `uninstall` removes
+    only the packages this overlay actually added.
+
+    Overlay library: $APM_OVERLAYS_DIR (default: ~/.apm/overlays/).
+    """
+
+
+@cli.command("list")
+def cmd_list():
+    """List available overlays."""
+    d = overlays_dir()
+    if not d.exists():
+        raise click.ClickException(f"Overlays dir does not exist: {d}")
+    names = sorted(p.name for p in d.iterdir() if (p / "apm.yml").exists())
+    if not names:
+        click.echo(f"(no overlays found in {d})")
+        return
+    click.echo(f"Overlays in {d}:")
+    for n in names:
+        data = load_yaml(d / n / "apm.yml")
+        desc = (data.get("description") or "").strip()
+        suffix = f" — {desc}" if desc else ""
+        click.echo(f"  {n}{suffix}")
+
+
+@cli.command("show")
+@click.argument("name")
+def cmd_show(name):
+    """Print an overlay's apm.yml."""
+    click.echo((overlay_path(name) / "apm.yml").read_text(), nl=False)
+
+
+@cli.command("status")
+@click.option("-g", "--global", "scope_global", is_flag=True,
+              help="Show overlays applied at global (~/.apm/) scope.")
+def cmd_status(scope_global):
+    """Show currently-applied overlays at the chosen scope."""
+    state = load_state(state_file(scope_global))
+    if not state:
+        click.echo(f"(no overlays active at {scope_label(scope_global)})")
+        return
+    click.echo(f"Active overlays at {scope_label(scope_global)}:")
+    for name in sorted(state):
+        entry = state[name]
+        ts = entry.get("applied_at", "?")
+        added_apm = entry.get("added_apm", [])
+        added_mcp = entry.get("added_mcp", [])
+        click.echo(f"  {name}  (applied {ts})")
+        for p in added_apm:
+            click.echo(f"    + apm: {p}")
+        for p in added_mcp:
+            click.echo(f"    + mcp: {p}")
+
+
+@cli.command("install")
+@click.argument("name")
+@click.option("-g", "--global", "scope_global", is_flag=True,
+              help="Install to user scope (~/.apm/) instead of the current project.")
+@click.option("--dry-run", is_flag=True, help="Show what would be installed without installing.")
+@click.option("-v", "--verbose", is_flag=True, help="Show the apm command being run.")
+def cmd_install(name, scope_global, dry_run, verbose):
+    """Apply overlay NAME at the chosen scope."""
+    overlay = overlay_path(name)
+    o_apm, o_mcp = extract_deps(load_yaml(overlay / "apm.yml"))
+
+    if not o_apm and not o_mcp:
+        raise click.ClickException(f"Overlay '{name}' has no dependencies to install.")
+    if o_mcp:
+        click.echo(
+            "[!] MCP overlay dependencies are not yet supported by apm-overlay; "
+            "ignoring: " + ", ".join(o_mcp),
+            err=True,
+        )
+
+    state_path = state_file(scope_global)
+    state = load_state(state_path)
+    if name in state:
+        raise click.ClickException(
+            f"Overlay '{name}' is already active at {scope_label(scope_global)}. "
+            f"Run `apm-overlay uninstall {name}{' -g' if scope_global else ''}` first."
+        )
+
+    a_apm, _a_mcp = extract_deps(load_yaml(active_apm_yml(scope_global)))
+    a_apm_set = set(a_apm)
+    to_install = [p for p in o_apm if p not in a_apm_set]
+
+    if not to_install:
+        click.echo(
+            f"[i] All packages from '{name}' are already present at "
+            f"{scope_label(scope_global)}; recording empty overlay entry."
+        )
+        if not dry_run:
+            state[name] = {
+                "added_apm": [],
+                "added_mcp": [],
+                "applied_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            }
+            save_state(state_path, state)
+        return
+
+    args = ["install"]
+    if scope_global:
+        args.append("-g")
+    args.extend(to_install)
+    rc = run_apm(args, dry_run, verbose)
+    if rc != 0:
+        raise click.ClickException(
+            f"apm install failed (exit {rc}); state file not updated."
+        )
+    if dry_run:
+        return
+
+    state[name] = {
+        "added_apm": to_install,
+        "added_mcp": [],
+        "applied_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+    save_state(state_path, state)
+    click.echo(f"[*] Overlay '{name}' installed at {scope_label(scope_global)}.")
+
+
+@cli.command("uninstall")
+@click.argument("name")
+@click.option("-g", "--global", "scope_global", is_flag=True,
+              help="Remove from user scope (~/.apm/) instead of the current project.")
+@click.option("--dry-run", is_flag=True, help="Show what would be removed without removing.")
+@click.option("-v", "--verbose", is_flag=True, help="Show the apm command being run.")
+def cmd_uninstall(name, scope_global, dry_run, verbose):
+    """Remove overlay NAME (only packages it actually added)."""
+    state_path = state_file(scope_global)
+    state = load_state(state_path)
+    if name not in state:
+        raise click.ClickException(
+            f"Overlay '{name}' is not active at {scope_label(scope_global)}."
+        )
+
+    entry = state[name]
+    my_apm = set(entry.get("added_apm", []))
+
+    other_apm: set[str] = set()
+    for other_name, other_entry in state.items():
+        if other_name == name:
+            continue
+        other_apm.update(other_entry.get("added_apm", []))
+
+    to_remove = sorted(my_apm - other_apm)
+    still_claimed = sorted(my_apm & other_apm)
+
+    if still_claimed:
+        click.echo(
+            "[i] Kept (still claimed by other active overlays): "
+            + ", ".join(still_claimed)
+        )
+
+    if to_remove:
+        args = ["uninstall"]
+        if scope_global:
+            args.append("-g")
+        args.extend(to_remove)
+        rc = run_apm(args, dry_run, verbose)
+        if rc != 0:
+            raise click.ClickException(
+                f"apm uninstall failed (exit {rc}); state file not updated."
+            )
+    else:
+        click.echo(f"[i] Nothing to remove for '{name}'.")
+
+    if dry_run:
+        return
+
+    del state[name]
+    save_state(state_path, state)
+    click.echo(f"[*] Overlay '{name}' removed at {scope_label(scope_global)}.")
+
+
+if __name__ == "__main__":
+    cli()

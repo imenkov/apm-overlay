@@ -1,0 +1,17 @@
+name: learn-ai
+version: 0.1.0
+description: AI Academy plugin from agency-microsoft/playground
+author: Igor Menkov
+# Which agent platforms to deploy to.
+# Resolution order: --target flag > this field > auto-detect from filesystem.
+# Accepted values: copilot, claude, cursor, opencode, codex, gemini, windsurf, all
+targets:
+- copilot
+dependencies:
+  apm:
+    - agency-microsoft/playground/plugins/ai-academy
+  mcp: []
+includes: auto
+devDependencies:
+  apm: []
+scripts: {}
