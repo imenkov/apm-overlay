@@ -69,6 +69,7 @@ SCRIPT_PATH="${REPO_DIR}/tools/apm-overlay"
 VENV_DIR="${REPO_DIR}/.venv"
 VENV_PY="${VENV_DIR}/bin/python"
 LAUNCHER_PATH="${BIN_DIR}/apm-overlay"
+SCRIPT_REAL="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)/$(basename "$SCRIPT_PATH")"
 
 if [[ ! -f "$SCRIPT_PATH" ]]; then
   echo "Expected script not found: $SCRIPT_PATH" >&2
@@ -77,6 +78,12 @@ fi
 
 if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
   echo "Python not found: $PYTHON_BIN" >&2
+  exit 1
+fi
+
+if [[ "$SCRIPT_REAL" == "$LAUNCHER_PATH" ]]; then
+  echo "Refusing to overwrite source script: launcher path equals $SCRIPT_PATH" >&2
+  echo "Choose a different --bin-dir (for example: ~/.local/bin)." >&2
   exit 1
 fi
 
@@ -134,8 +141,14 @@ run "$VENV_PY" -m pip install --upgrade pip
 run "$VENV_PY" -m pip install click pyyaml
 
 if [[ "$DRY_RUN" -eq 1 ]]; then
+  if [[ -L "$LAUNCHER_PATH" ]]; then
+    echo "[dry-run] remove symlink launcher ${LAUNCHER_PATH}"
+  fi
   echo "[dry-run] write launcher ${LAUNCHER_PATH}"
 else
+  if [[ -L "$LAUNCHER_PATH" ]]; then
+    rm -f "$LAUNCHER_PATH"
+  fi
   cat > "$LAUNCHER_PATH" <<EOF
 #!/usr/bin/env bash
 exec "${VENV_PY}" "${SCRIPT_PATH}" "\$@"
