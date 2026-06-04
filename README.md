@@ -33,19 +33,46 @@ to remove afterwards is a chore. `apm-overlay`:
 
 ## Install
 
-Prereqs: `apm` ≥ 0.16, Python 3.9+, `click`, `pyyaml`.
+Prereqs: `apm` >= 0.16, Python 3.9+.
+
+### Quick install (apm-style)
 
 ```bash
-# Python deps (user-scope)
-python3 -m pip install --user click pyyaml
+curl -sSL https://raw.githubusercontent.com/imenkov/apm-overlay/main/install.sh | sh
+```
 
-# Place the script and symlink onto PATH
-ln -sfn "$HOME/src/imenkov/apm-overlay/tools/apm-overlay" \
-        "$HOME/.local/bin/apm-overlay"
+Pin a branch or tag:
 
-# Point at your overlay library (default: ~/.apm/overlays/)
-echo 'export APM_OVERLAYS_DIR="$HOME/src/imenkov/apm-overlay/overlays"' \
-    >> ~/.zshrc
+```bash
+curl -sSL https://raw.githubusercontent.com/imenkov/apm-overlay/main/install.sh | sh -s -- @main
+# or
+VERSION=v0.1.0 curl -sSL https://raw.githubusercontent.com/imenkov/apm-overlay/main/install.sh | sh
+```
+
+The installer creates a dedicated virtual environment and launcher, so
+macOS/Homebrew Python does not fail with `externally-managed-environment`.
+
+### Local install (from cloned repo)
+
+```bash
+cd "$HOME/src/imenkov/apm-overlay"
+./tools/local-install.sh
+```
+
+Optional flags:
+
+```bash
+./tools/local-install.sh --help
+./tools/local-install.sh --shell-rc ~/.zshrc --bin-dir ~/.local/bin
+```
+
+Bootstrap environment overrides:
+
+```bash
+APM_OVERLAY_HOME="$HOME/.local/share/apm-overlay" \
+APM_OVERLAY_BIN_DIR="$HOME/.local/bin" \
+APM_OVERLAYS_DIR="$HOME/.local/share/apm-overlay/overlays" \
+curl -sSL https://raw.githubusercontent.com/imenkov/apm-overlay/main/install.sh | sh
 ```
 
 Re-source your shell, then verify:
