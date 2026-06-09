@@ -41,8 +41,12 @@ dependencies:
 
 ### `apm-overlay status [-g]`
 
-Show which overlays are currently applied at the chosen scope, along with the
-exact packages each overlay added.
+Show which overlays are currently applied, along with the exact packages each
+overlay added.
+
+- With no flag, lists **both** project and global scopes (global overlays are
+  always active in every project).
+- With `-g`, restricts output to the global scope only.
 
 ```bash
 $ apm-overlay status -g
@@ -51,7 +55,7 @@ Active overlays at global (~/.apm/):
     + apm: agency-microsoft/playground/plugins/ai-academy
 ```
 
-If nothing is active you get `(no overlays active at ...)`.
+If nothing is active at a given scope you get `(no overlays active at ...)`.
 
 ### `apm-overlay install <name> [-g] [--dry-run] [-v]`
 
@@ -124,7 +128,7 @@ uninstalled.
 cd path/to/my-project           # must have an apm.yml
 apm-overlay install code-review
 # project apm.yml now includes the overlay's packages
-apm-overlay status              # shows project-scope state
+apm-overlay status              # shows project-scope state + global overlays
 apm-overlay uninstall code-review
 ```
 
