@@ -185,11 +185,7 @@ def cmd_show(name):
     click.echo((overlay_path(name) / "apm.yml").read_text(), nl=False)
 
 
-@cli.command("status")
-@click.option("-g", "--global", "scope_global", is_flag=True,
-              help="Show overlays applied at global (~/.apm/) scope.")
-def cmd_status(scope_global):
-    """Show currently-applied overlays at the chosen scope."""
+def _print_scope_status(scope_global: bool) -> None:
     state = load_state(state_file(scope_global))
     if not state:
         click.echo(f"(no overlays active at {scope_label(scope_global)})")
@@ -205,6 +201,24 @@ def cmd_status(scope_global):
             click.echo(f"    + apm: {p}")
         for p in added_mcp:
             click.echo(f"    + mcp: {p}")
+
+
+@cli.command("status")
+@click.option("-g", "--global", "scope_global", is_flag=True,
+              help="Show only the global (~/.apm/) scope.")
+def cmd_status(scope_global):
+    """Show currently-applied overlays.
+
+    With no flag, lists both project and global scopes (global overlays are
+    always active regardless of cwd). With ``-g``, restricts output to the
+    global scope only.
+    """
+    if scope_global:
+        _print_scope_status(True)
+        return
+    _print_scope_status(False)
+    click.echo("")
+    _print_scope_status(True)
 
 
 @cli.command("install")
