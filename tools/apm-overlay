@@ -211,9 +211,11 @@ def cmd_status(scope_global):
 @click.argument("name")
 @click.option("-g", "--global", "scope_global", is_flag=True,
               help="Install to user scope (~/.apm/) instead of the current project.")
+@click.option("--target", "target", metavar="TARGET",
+              help="Pass target through to apm (for example: copilot, claude).")
 @click.option("--dry-run", is_flag=True, help="Show what would be installed without installing.")
 @click.option("-v", "--verbose", is_flag=True, help="Show the apm command being run.")
-def cmd_install(name, scope_global, dry_run, verbose):
+def cmd_install(name, scope_global, target, dry_run, verbose):
     """Apply overlay NAME at the chosen scope."""
     overlay = overlay_path(name)
     o_apm, o_mcp = extract_deps(load_yaml(overlay / "apm.yml"))
@@ -256,6 +258,8 @@ def cmd_install(name, scope_global, dry_run, verbose):
     args = ["install"]
     if scope_global:
         args.append("-g")
+    if target:
+        args.extend(["--target", target])
     args.extend(to_install)
     rc = run_apm(args, dry_run, verbose)
     if rc != 0:
@@ -278,9 +282,11 @@ def cmd_install(name, scope_global, dry_run, verbose):
 @click.argument("name")
 @click.option("-g", "--global", "scope_global", is_flag=True,
               help="Remove from user scope (~/.apm/) instead of the current project.")
+@click.option("--target", "target", metavar="TARGET",
+              help="Pass target through to apm (for example: copilot, claude).")
 @click.option("--dry-run", is_flag=True, help="Show what would be removed without removing.")
 @click.option("-v", "--verbose", is_flag=True, help="Show the apm command being run.")
-def cmd_uninstall(name, scope_global, dry_run, verbose):
+def cmd_uninstall(name, scope_global, target, dry_run, verbose):
     """Remove overlay NAME (only packages it actually added)."""
     state_path = state_file(scope_global)
     state = load_state(state_path)
@@ -311,6 +317,8 @@ def cmd_uninstall(name, scope_global, dry_run, verbose):
         args = ["uninstall"]
         if scope_global:
             args.append("-g")
+        if target:
+            args.extend(["--target", target])
         args.extend(to_remove)
         rc = run_apm(args, dry_run, verbose)
         if rc != 0:

@@ -53,42 +53,42 @@ Active overlays at global (~/.apm/):
 
 If nothing is active you get `(no overlays active at ...)`.
 
-### `apm-overlay install <name> [-g] [--dry-run] [-v]`
+### `apm-overlay install <name> [-g] [--target <target>] [--dry-run] [-v]`
 
 Apply an overlay. Behavior:
 
 1. Reads `<APM_OVERLAYS_DIR>/<name>/apm.yml`.
 2. Refuses if `<name>` is already active at the chosen scope.
 3. Computes `to_install = overlay.deps − active.deps` (set difference).
-4. Runs `apm install [-g] <to_install...>` (single invocation; one lockfile
+4. Runs `apm install [-g] [--target <target>] <to_install...>` (single invocation; one lockfile
    update).
 5. On success, records the additions in the state file.
 
 ```bash
 # preview
-apm-overlay install learn-ai -g --dry-run
+apm-overlay install learn-ai -g --target copilot --dry-run
 # real run, with the underlying command echoed
-apm-overlay install learn-ai -g -v
+apm-overlay install learn-ai -g --target copilot -v
 ```
 
 If every overlay package is already in the baseline, no `apm install` is run,
 but an empty state entry is recorded so `uninstall` is a clean no-op.
 
-### `apm-overlay uninstall <name> [-g] [--dry-run] [-v]`
+### `apm-overlay uninstall <name> [-g] [--target <target>] [--dry-run] [-v]`
 
 Remove an overlay. Behavior:
 
 1. Refuses if the overlay is not active at the chosen scope.
 2. Computes `to_remove = state[name].added − ⋃(other_active.added)` — any
    package still claimed by another active overlay is kept.
-3. Runs `apm uninstall [-g] <to_remove...>`.
+3. Runs `apm uninstall [-g] [--target <target>] <to_remove...>`.
 4. On success, drops the state entry.
 
 ```bash
 # preview
-apm-overlay uninstall learn-ai -g --dry-run
+apm-overlay uninstall learn-ai -g --target copilot --dry-run
 # real run
-apm-overlay uninstall learn-ai -g -v
+apm-overlay uninstall learn-ai -g --target copilot -v
 ```
 
 When packages are skipped because another overlay still claims them, the tool

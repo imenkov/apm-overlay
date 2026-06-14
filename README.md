@@ -90,11 +90,11 @@ apm-overlay list
 apm-overlay show learn-ai
 
 # Apply an overlay globally (or omit -g for the current project)
-apm-overlay install learn-ai -g
+apm-overlay install learn-ai -g --target copilot
 apm-overlay status -g
 
 # Undo — only removes what THIS overlay added
-apm-overlay uninstall learn-ai -g
+apm-overlay uninstall learn-ai -g --target copilot
 ```
 
 Every command supports `--dry-run` for previewing and `-v` to print the exact
