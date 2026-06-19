@@ -16,8 +16,8 @@ For the full story see [`../docs/`](../docs/):
 export APM_OVERLAYS_DIR="$(pwd)"
 
 apm-overlay list
-apm-overlay install <name> [-g]
-apm-overlay uninstall <name> [-g]
+apm-overlay install <name> [-g] [--target <target>]
+apm-overlay uninstall <name> [-g] [--target <target>]
 apm-overlay status [-g]
 ```
 
