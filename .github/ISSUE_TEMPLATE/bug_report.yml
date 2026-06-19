@@ -1,0 +1,48 @@
+name: Bug report
+description: Report a reproducible problem with apm-overlay.
+title: "fix: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please do not include secrets, private repository names, or internal-only package references.
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the bug and the behavior you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      description: Provide the smallest set of commands needed to reproduce the issue.
+      placeholder: |
+        1. Run `apm-overlay ...`
+        2. See error `...`
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: apm-overlay version
+      placeholder: "apm-overlay, version 0.1.0"
+  - type: input
+    id: apm-version
+    attributes:
+      label: apm version
+      placeholder: "apm --version"
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, shell, Python version, install method, and any relevant public package references.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or output
+      description: Paste relevant output after removing secrets or private/internal references.
+      render: text

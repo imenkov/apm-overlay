@@ -1,2 +1,6 @@
 apm_modules/
 .agents/
+.venv/
+__pycache__/
+*.py[cod]
+apm.overlays.json

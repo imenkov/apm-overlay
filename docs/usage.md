@@ -22,7 +22,8 @@ Show available overlays. No flags.
 ```bash
 $ apm-overlay list
 Overlays in /Users/me/src/imenkov/apm-overlay/overlays:
-  learn-ai — AI Academy plugin from agency-microsoft/playground
+  automation — Automation plugins from the awesome-copilot marketplace
+  docs-design — Documentation writing, designing, and brainstorming technical solutions plugins from the awesome-copilot marketplace
 ```
 
 ### `apm-overlay show <name>`
@@ -30,12 +31,14 @@ Overlays in /Users/me/src/imenkov/apm-overlay/overlays:
 Print the overlay's `apm.yml` (useful when authoring or auditing).
 
 ```bash
-$ apm-overlay show learn-ai
-name: learn-ai
+$ apm-overlay show automation
+name: automation
 ...
 dependencies:
   apm:
-    - agency-microsoft/playground/plugins/ai-academy
+    - github/awesome-copilot/plugins/automate-this
+    - ChromeDevTools/chrome-devtools-mcp
+    - github/awesome-copilot/plugins/testing-automation
   mcp: []
 ```
 
@@ -51,8 +54,10 @@ overlay added.
 ```bash
 $ apm-overlay status -g
 Active overlays at global (~/.apm/):
-  learn-ai  (applied 2026-06-02T12:39:48+00:00)
-    + apm: agency-microsoft/playground/plugins/ai-academy
+  automation  (applied 2026-06-02T12:39:48+00:00)
+    + apm: github/awesome-copilot/plugins/automate-this
+    + apm: ChromeDevTools/chrome-devtools-mcp
+    + apm: github/awesome-copilot/plugins/testing-automation
 ```
 
 If nothing is active at a given scope you get `(no overlays active at ...)`.
@@ -70,9 +75,9 @@ Apply an overlay. Behavior:
 
 ```bash
 # preview
-apm-overlay install learn-ai -g --target copilot --dry-run
+apm-overlay install automation -g --target copilot --dry-run
 # real run, with the underlying command echoed
-apm-overlay install learn-ai -g --target copilot -v
+apm-overlay install automation -g --target copilot -v
 ```
 
 If every overlay package is already in the baseline, no `apm install` is run,
@@ -90,9 +95,9 @@ Remove an overlay. Behavior:
 
 ```bash
 # preview
-apm-overlay uninstall learn-ai -g --target copilot --dry-run
+apm-overlay uninstall automation -g --target copilot --dry-run
 # real run
-apm-overlay uninstall learn-ai -g --target copilot -v
+apm-overlay uninstall automation -g --target copilot -v
 ```
 
 When packages are skipped because another overlay still claims them, the tool
