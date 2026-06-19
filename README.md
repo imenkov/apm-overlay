@@ -2,6 +2,12 @@
 
 > Stackable, reversible overlays of [apm](https://github.com/microsoft/apm) packages — globally or per project.
 
+> [!IMPORTANT]
+> This is a personal, community-run open-source project published by Igor
+> Menkov. It is not a Microsoft product and is not affiliated with, endorsed
+> by, or supported by Microsoft. References to Microsoft- or GitHub-owned
+> open-source projects identify public upstream dependencies only.
+
 `apm-overlay` lets you keep a small, hand-curated **baseline** of apm packages
 in your project (or user scope) and temporarily layer task-specific
 **overlays** on top — then cleanly undo them when the task is done.
@@ -30,6 +36,8 @@ to remove afterwards is a chore. `apm-overlay`:
 | [README.md](./README.md) (this file) | First touch, install, 30-second tour |
 | [architecture.md](./docs/architecture.md) | You want to know how/why it works, or you're considering a contribution / merge into apm |
 | [usage.md](./docs/usage.md) | Day-to-day reference — every command, common recipes, troubleshooting |
+| [CONTRIBUTING.md](./CONTRIBUTING.md) | You want to report an issue or open a pull request |
+| [SECURITY.md](./SECURITY.md) | You need to report a vulnerability privately |
 
 ## Install
 
@@ -87,14 +95,14 @@ apm-overlay list
 ```bash
 # What's available?
 apm-overlay list
-apm-overlay show learn-ai
+apm-overlay show automation
 
 # Apply an overlay globally (or omit -g for the current project)
-apm-overlay install learn-ai -g --target copilot
+apm-overlay install automation -g --target copilot
 apm-overlay status -g
 
 # Undo — only removes what THIS overlay added
-apm-overlay uninstall learn-ai -g --target copilot
+apm-overlay uninstall automation -g --target copilot
 ```
 
 Every command supports `--dry-run` for previewing and `-v` to print the exact
@@ -116,3 +124,11 @@ plain `apm install`).
 
 See [usage.md](./docs/usage.md) for the full reference and
 [architecture.md](./docs/architecture.md) for design details.
+
+## Community and license
+
+This project is licensed under the [MIT License](./LICENSE).
+
+Contributions are welcome. Please read [CONTRIBUTING.md](./CONTRIBUTING.md),
+follow the [Code of Conduct](./CODE_OF_CONDUCT.md), and report security issues
+privately using the guidance in [SECURITY.md](./SECURITY.md).
