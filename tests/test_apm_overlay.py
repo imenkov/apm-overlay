@@ -69,7 +69,7 @@ skip_next = False
 for arg in args[1:]:
     if skip_next:
         skip_next = False
-    elif arg == "--target":
+    elif arg in {"--only", "--target"}:
         skip_next = True
     elif not arg.startswith("-"):
         packages.append(arg)
@@ -347,12 +347,79 @@ raise SystemExit(int(os.environ.get("FAKE_APM_EXIT_CODE", "0")))
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(
-            "[dry-run] apm install org/first org/second",
+            "[dry-run] apm install --only apm org/first org/second",
             result.stdout,
         )
         self.assertFalse((project / "apm.yml").exists())
         self.assertFalse((project / "apm.lock.yaml").exists())
         self.assertFalse((project / "apm.overlays.json").exists())
+
+    def test_install_commands_disable_transitive_mcp_configuration(self):
+        library = self.root / "library"
+        self.create_overlay(library, "safe", dependency="org/pkg")
+        project = self.root / "project"
+        project.mkdir()
+        env = {"APM_OVERLAYS_DIRS": str(library), "PATH": ""}
+
+        cases = (
+            ((), "apm install --only apm org/pkg"),
+            (("-g",), "apm install --only apm -g org/pkg"),
+            (
+                ("--target", "copilot"),
+                "apm install --only apm --target copilot org/pkg",
+            ),
+            (
+                ("-g", "--target", "copilot"),
+                "apm install --only apm -g --target copilot org/pkg",
+            ),
+        )
+        for options, expected in cases:
+            with self.subTest(options=options):
+                result = self.run_cli(
+                    "install",
+                    "safe",
+                    *options,
+                    "--dry-run",
+                    cwd=project,
+                    env=env,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn(f"[dry-run] {expected}", result.stdout)
+
+    def test_uninstall_does_not_forward_unsupported_target_option(self):
+        project = self.root / "project"
+        project.mkdir()
+        entry = {
+            "overlay": {
+                "added_apm": ["org/pkg"],
+                "added_mcp": [],
+                "applied_at": "2026-01-01T00:00:00+00:00",
+            }
+        }
+        (project / "apm.overlays.json").write_text(json.dumps(entry))
+        global_state = self.home / ".apm" / "overlays.state.json"
+        global_state.parent.mkdir()
+        global_state.write_text(json.dumps(entry))
+
+        cases = (
+            ((), "apm uninstall org/pkg"),
+            (("-g",), "apm uninstall -g org/pkg"),
+        )
+        for options, expected in cases:
+            with self.subTest(options=options):
+                result = self.run_cli(
+                    "uninstall",
+                    "overlay",
+                    *options,
+                    "--target",
+                    "copilot",
+                    "--dry-run",
+                    cwd=project,
+                    env={"PATH": ""},
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn(f"[dry-run] {expected}", result.stdout)
+                self.assertNotIn("--target", result.stdout)
 
 
 if __name__ == "__main__":

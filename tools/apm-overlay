@@ -405,7 +405,7 @@ def cmd_install(name, scope_global, target, dry_run, verbose):
             save_state(state_path, state)
         return
 
-    args = ["install"]
+    args = ["install", "--only", "apm"]
     if scope_global:
         args.append("-g")
     if target:
@@ -465,7 +465,7 @@ def cmd_install(name, scope_global, target, dry_run, verbose):
 @click.option("-g", "--global", "scope_global", is_flag=True,
               help="Remove from user scope (~/.apm/) instead of the current project.")
 @click.option("--target", "target", metavar="TARGET",
-              help="Pass target through to apm (for example: copilot, claude).")
+              help="Accepted for backward compatibility; apm uninstall is target-agnostic.")
 @click.option("--dry-run", is_flag=True, help="Show what would be removed without removing.")
 @click.option("-v", "--verbose", is_flag=True, help="Show the apm command being run.")
 def cmd_uninstall(name, scope_global, target, dry_run, verbose):
@@ -499,8 +499,6 @@ def cmd_uninstall(name, scope_global, target, dry_run, verbose):
         args = ["uninstall"]
         if scope_global:
             args.append("-g")
-        if target:
-            args.extend(["--target", target])
         args.extend(to_remove)
         rc = run_apm(args, dry_run, verbose)
         if rc != 0:
