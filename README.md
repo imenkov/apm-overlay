@@ -79,9 +79,13 @@ Bootstrap environment overrides:
 ```bash
 APM_OVERLAY_HOME="$HOME/.local/share/apm-overlay" \
 APM_OVERLAY_BIN_DIR="$HOME/.local/bin" \
-APM_OVERLAYS_DIR="$HOME/.local/share/apm-overlay/overlays" \
+APM_OVERLAYS_DIRS="$HOME/team-overlays:$HOME/personal-overlays" \
 curl -sSL https://raw.githubusercontent.com/imenkov/apm-overlay/main/install.sh | sh
 ```
+
+`APM_OVERLAYS_DIRS` is an `os.pathsep`-separated library list (`:` on
+macOS/Linux, `;` on Windows). The legacy singular `APM_OVERLAYS_DIR` and the
+installer's `--overlays-dir` option remain supported.
 
 Re-source your shell, then verify:
 
@@ -113,7 +117,8 @@ Every command supports `--dry-run` for previewing and `-v` to print the exact
 An overlay is a regular apm project. Scaffold one with apm itself:
 
 ```bash
-cd "$APM_OVERLAYS_DIR"
+OVERLAY_LIBRARY="${APM_OVERLAYS_DIR:-$HOME/.apm/overlays}"
+cd "$OVERLAY_LIBRARY"
 apm plugin init my-overlay -y --target copilot
 $EDITOR my-overlay/apm.yml          # add packages under dependencies.apm
 ```

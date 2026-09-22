@@ -13,7 +13,7 @@ For the full story see [`../docs/`](../docs/):
 ## Quick reference
 
 ```bash
-export APM_OVERLAYS_DIR="$(pwd)"
+export APM_OVERLAYS_DIRS="$(pwd)"
 
 apm-overlay list
 apm-overlay install <name> [-g] [--target <target>]

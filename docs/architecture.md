@@ -39,8 +39,8 @@ feature into apm itself, this is the document to read first.
                 │                                  │
                 ▼                                  ▼
    ┌────────────────────────┐         ┌────────────────────────────┐
-   │  Overlay library       │         │  apm CLI (subprocess)      │
-   │  $APM_OVERLAYS_DIR     │         │  apm install / uninstall   │
+   │  Overlay libraries     │         │  apm CLI (subprocess)      │
+   │  $APM_OVERLAYS_DIRS    │         │  apm install / uninstall   │
    │  └─ <name>/apm.yml     │         │  -g for user scope         │
    └────────────────────────┘         └────────────────────────────┘
                 │                                  │
@@ -63,12 +63,24 @@ owns everything else.
 
 ## Components
 
-### 1. Overlay library
+### 1. Overlay libraries
 
-Discovered via the `APM_OVERLAYS_DIR` environment variable (default
-`~/.apm/overlays/`). Each subdirectory whose root contains `apm.yml` is
-considered an overlay. The overlay's `name` for CLI purposes is the directory
+Discovered from the first applicable configuration:
+
+1. Non-empty entries in `APM_OVERLAYS_DIRS`, split with Python's
+   `os.pathsep`.
+2. The legacy singular `APM_OVERLAYS_DIR`.
+3. `~/.apm/overlays/`.
+
+User paths are expanded, empty entries are ignored, and equivalent duplicate
+paths are removed while preserving order. Every subdirectory whose root
+contains `apm.yml` is considered an overlay. Its CLI name is the directory
 name.
+
+Discovery aggregates all libraries. `list` reports each overlay's source and
+marks duplicate names as ambiguous. Name-based operations never use library
+order as precedence: `show` and `install` require exactly one match and list
+all paths when a name is duplicated.
 
 The overlay's `apm.yml` is a standard apm project manifest. The tool only
 reads:
@@ -100,7 +112,8 @@ Format:
   "<overlay-name>": {
     "added_apm": ["org/repo", "org/other-repo@v1"],
     "added_mcp": [],
-    "applied_at": "2026-06-02T12:39:48+00:00"
+    "applied_at": "2026-06-02T12:39:48+00:00",
+    "source": "/Users/me/team-overlays/example"
   },
   ...
 }
@@ -108,7 +121,8 @@ Format:
 
 Writes are atomic (write to `*.tmp` → `rename`) so a crash during save never
 leaves a corrupt file. The file is small JSON; no schema migration needed for
-v1.
+v1. The `source` field is additive: older entries without it remain readable
+and uninstallable.
 
 ### 3. apm bridge
 
@@ -123,13 +137,14 @@ re-running `install` or `uninstall` after a transient failure is safe.
 ### `install <name> [-g]`
 
 ```
-1. Resolve overlay dir from $APM_OVERLAYS_DIR / <name>
+1. Search all configured libraries for <name> and require one match
 2. Parse overlay's apm.yml → set O = dependencies.apm
 3. Reject if state file already has <name> (no double-apply)
 4. Parse active apm.yml (cwd or ~/.apm/) → set A
 5. to_install = O − A             # never re-add what baseline already has
 6. apm install [-g] <to_install...>
-7. On success: state[name] = { added_apm: to_install, ..., applied_at: ts }
+7. On success: state[name] = { added_apm: to_install, ..., applied_at: ts,
+                               source: resolved_overlay_path }
    On failure: do NOT touch state
 ```
 
@@ -168,6 +183,8 @@ never uninstall a package another active overlay still needs.
 | Failure | Behavior |
 |---|---|
 | Overlay file missing | Clear error before any side effect. |
+| Duplicate overlay name | `list` marks all matches ambiguous; `show` and `install` fail and enumerate them. |
+| Some configured libraries missing | Existing libraries are searched; an error is raised only when none exist. |
 | apm install fails mid-way | apm rolls back its own changes per its design; our state file is untouched, so user can re-run `apm-overlay install`. |
 | apm uninstall fails mid-way | State entry preserved → user can re-run, investigate, or manually `apm uninstall` and then edit state. |
 | State file corrupted | `apm-overlay status/install/uninstall` errors clearly with the parse error and file path. Manual fix: delete the file (loses overlay tracking; apm-owned state is unaffected). |
@@ -214,7 +231,7 @@ cleanly:
 
 The script has four logical sections, in order:
 
-1. **Paths** — `overlays_dir()`, `state_file()`, `active_apm_yml()`.
+1. **Paths** — `overlays_dirs()`, `state_file()`, `active_apm_yml()`.
 2. **IO helpers** — `load_yaml`, `load_state`, `save_state` (atomic write).
 3. **Overlay resolution** — `overlay_path`, `extract_deps` (normalizes deps
    to deduped string lists).

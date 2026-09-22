@@ -7,7 +7,8 @@ contributes. The `install` subcommand adds those packages to the active scope
 (project or ~/.apm/) via stock `apm install`; `uninstall` removes only the
 packages this overlay actually added, leaving the baseline intact.
 
-Library discovery: $APM_OVERLAYS_DIR (default: ~/.apm/overlays/).
+Library discovery: $APM_OVERLAYS_DIRS, then $APM_OVERLAYS_DIR, then
+~/.apm/overlays/.
 State files:
     global  -> ~/.apm/overlays.state.json
     project -> <cwd>/apm.overlays.json
@@ -37,9 +38,28 @@ PROJECT_STATE_FILENAME = "apm.overlays.json"
 
 # ---------- paths ----------
 
-def overlays_dir() -> Path:
-    raw = os.environ.get("APM_OVERLAYS_DIR")
-    return Path(raw).expanduser() if raw else DEFAULT_OVERLAYS_DIR
+def _dedupe_paths(raw_paths: Iterable[str]) -> list[Path]:
+    seen: set[str] = set()
+    paths: list[Path] = []
+    for raw in raw_paths:
+        if not raw:
+            continue
+        path = Path(raw).expanduser()
+        key = os.path.normcase(str(path.resolve(strict=False)))
+        if key not in seen:
+            seen.add(key)
+            paths.append(path)
+    return paths
+
+
+def overlays_dirs() -> list[Path]:
+    plural = _dedupe_paths(os.environ.get("APM_OVERLAYS_DIRS", "").split(os.pathsep))
+    if plural:
+        return plural
+    legacy = os.environ.get("APM_OVERLAYS_DIR")
+    if legacy:
+        return _dedupe_paths([legacy])
+    return [DEFAULT_OVERLAYS_DIR]
 
 
 def state_file(scope_global: bool) -> Path:
@@ -86,20 +106,42 @@ def save_state(path: Path, state: dict) -> None:
 
 # ---------- overlay resolution ----------
 
+def _existing_overlay_dirs() -> list[Path]:
+    configured = overlays_dirs()
+    existing = [path for path in configured if path.is_dir()]
+    if not existing:
+        formatted = "\n".join(f"  {path}" for path in configured)
+        raise click.ClickException(
+            f"No overlay libraries exist:\n{formatted}\n"
+            "Set APM_OVERLAYS_DIRS or APM_OVERLAYS_DIR, or create the directory."
+        )
+    return existing
+
+
+def discover_overlays() -> dict[str, list[Path]]:
+    found: dict[str, list[Path]] = {}
+    for library in _existing_overlay_dirs():
+        for path in library.iterdir():
+            if path.is_dir() and (path / "apm.yml").is_file():
+                found.setdefault(path.name, []).append(path)
+    return found
+
+
 def overlay_path(name: str) -> Path:
-    base = overlays_dir()
-    if not base.exists():
+    matches = discover_overlays().get(name, [])
+    if not matches:
+        searched = "\n".join(f"  {path / name / 'apm.yml'}" for path in overlays_dirs())
         raise click.ClickException(
-            f"Overlays directory does not exist: {base}\n"
-            f"Set APM_OVERLAYS_DIR or create the directory."
+            f"Overlay '{name}' not found. Searched:\n{searched}"
         )
-    p = base / name
-    manifest = p / "apm.yml"
-    if not manifest.exists():
+    if len(matches) > 1:
+        formatted = "\n".join(f"  {path.resolve()}" for path in matches)
         raise click.ClickException(
-            f"Overlay '{name}' not found (expected apm.yml at {manifest})."
+            f"Overlay '{name}' is ambiguous; found {len(matches)} matches:\n"
+            f"{formatted}\n"
+            "Remove the duplicate name or adjust APM_OVERLAYS_DIRS."
         )
-    return p
+    return matches[0]
 
 
 def extract_deps(apm_yml_data: dict) -> tuple[list[str], list[str]]:
@@ -156,26 +198,28 @@ def cli():
     `install` adds those packages via `apm install`; `uninstall` removes
     only the packages this overlay actually added.
 
-    Overlay library: $APM_OVERLAYS_DIR (default: ~/.apm/overlays/).
+    Overlay libraries: $APM_OVERLAYS_DIRS (path-separated), then the legacy
+    $APM_OVERLAYS_DIR, then ~/.apm/overlays/.
     """
 
 
 @cli.command("list")
 def cmd_list():
     """List available overlays."""
-    d = overlays_dir()
-    if not d.exists():
-        raise click.ClickException(f"Overlays dir does not exist: {d}")
-    names = sorted(p.name for p in d.iterdir() if (p / "apm.yml").exists())
-    if not names:
-        click.echo(f"(no overlays found in {d})")
+    overlays = discover_overlays()
+    if not overlays:
+        locations = os.pathsep.join(str(path) for path in overlays_dirs())
+        click.echo(f"(no overlays found in {locations})")
         return
-    click.echo(f"Overlays in {d}:")
-    for n in names:
-        data = load_yaml(d / n / "apm.yml")
-        desc = (data.get("description") or "").strip()
-        suffix = f" — {desc}" if desc else ""
-        click.echo(f"  {n}{suffix}")
+    click.echo("Available overlays:")
+    for name in sorted(overlays):
+        matches = overlays[name]
+        ambiguity = f" [AMBIGUOUS: {len(matches)} matches]" if len(matches) > 1 else ""
+        for path in matches:
+            data = load_yaml(path / "apm.yml")
+            desc = (data.get("description") or "").strip()
+            suffix = f" — {desc}" if desc else ""
+            click.echo(f"  {name}{suffix} [source: {path.parent}]{ambiguity}")
 
 
 @cli.command("show")
@@ -194,9 +238,11 @@ def _print_scope_status(scope_global: bool) -> None:
     for name in sorted(state):
         entry = state[name]
         ts = entry.get("applied_at", "?")
+        source = entry.get("source")
         added_apm = entry.get("added_apm", [])
         added_mcp = entry.get("added_mcp", [])
-        click.echo(f"  {name}  (applied {ts})")
+        source_suffix = f", source {source}" if source else ""
+        click.echo(f"  {name}  (applied {ts}{source_suffix})")
         for p in added_apm:
             click.echo(f"    + apm: {p}")
         for p in added_mcp:
@@ -265,6 +311,7 @@ def cmd_install(name, scope_global, target, dry_run, verbose):
                 "added_apm": [],
                 "added_mcp": [],
                 "applied_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "source": str(overlay.resolve()),
             }
             save_state(state_path, state)
         return
@@ -287,6 +334,7 @@ def cmd_install(name, scope_global, target, dry_run, verbose):
         "added_apm": to_install,
         "added_mcp": [],
         "applied_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "source": str(overlay.resolve()),
     }
     save_state(state_path, state)
     click.echo(f"[*] Overlay '{name}' installed at {scope_label(scope_global)}.")

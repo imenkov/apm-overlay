@@ -10,8 +10,10 @@ Complete command reference and common recipes for `apm-overlay`.
 - All mutating commands accept:
   - `--dry-run` — print the resolved `apm` command without executing.
   - `-v/--verbose` — echo the resolved `apm` command before executing.
-- Overlay names are directory names under `$APM_OVERLAYS_DIR` (default
-  `~/.apm/overlays/`).
+- Overlay names are directory names in the configured overlay libraries.
+  `$APM_OVERLAYS_DIRS` accepts an `os.pathsep`-separated list (`:` on
+  macOS/Linux, `;` on Windows). If it has no non-empty entries, the legacy
+  `$APM_OVERLAYS_DIR` is used, then `~/.apm/overlays/`.
 
 ## Command reference
 
@@ -21,14 +23,19 @@ Show available overlays. No flags.
 
 ```bash
 $ apm-overlay list
-Overlays in /Users/me/src/imenkov/apm-overlay/overlays:
-  automation — Automation plugins from the awesome-copilot marketplace
-  docs-design — Documentation writing, designing, and brainstorming technical solutions plugins from the awesome-copilot marketplace
+Available overlays:
+  automation — Automation plugins [source: /Users/me/team-overlays]
+  docs-design — Documentation plugins [source: /Users/me/personal-overlays]
 ```
+
+Every occurrence includes its source library. If the same name exists in more
+than one library, each occurrence is marked `[AMBIGUOUS: N matches]`.
 
 ### `apm-overlay show <name>`
 
 Print the overlay's `apm.yml` (useful when authoring or auditing).
+The name must resolve uniquely across all configured libraries. Duplicate
+names fail with an error that lists every matching path.
 
 ```bash
 $ apm-overlay show automation
@@ -66,12 +73,16 @@ If nothing is active at a given scope you get `(no overlays active at ...)`.
 
 Apply an overlay. Behavior:
 
-1. Reads `<APM_OVERLAYS_DIR>/<name>/apm.yml`.
+1. Searches every configured library for `<name>/apm.yml` and requires exactly
+   one match.
 2. Refuses if `<name>` is already active at the chosen scope.
 3. Computes `to_install = overlay.deps − active.deps` (set difference).
 4. Runs `apm install [-g] [--target <target>] <to_install...>` (single invocation; one lockfile
    update).
 5. On success, records the additions in the state file.
+
+New state entries also record the resolved overlay source path. Existing state
+files without that field remain valid.
 
 ```bash
 # preview
@@ -143,7 +154,8 @@ project's `.gitignore` if you don't want to commit it.
 ### Author a new overlay
 
 ```bash
-cd "$APM_OVERLAYS_DIR"
+OVERLAY_LIBRARY="$HOME/src/my-overlays"
+cd "$OVERLAY_LIBRARY"
 apm plugin init my-task -y --target copilot
 cd my-task
 $EDITOR apm.yml         # add packages under dependencies.apm
@@ -163,7 +175,7 @@ cat ~/.apm/apm.yml              # full baseline + overlay state from apm's POV
 
 ```bash
 apm-overlay uninstall my-task -g
-$EDITOR "$APM_OVERLAYS_DIR/my-task/apm.yml"
+$EDITOR "$HOME/src/my-overlays/my-task/apm.yml"
 apm-overlay install my-task -g
 ```
 
@@ -174,13 +186,20 @@ apm-overlay install my-task -g
 
 | Variable | Purpose | Default |
 |---|---|---|
-| `APM_OVERLAYS_DIR` | Where to find overlay subdirectories | `~/.apm/overlays/` |
+| `APM_OVERLAYS_DIRS` | Path-separated overlay library list; non-empty entries win over the singular variable | unset |
+| `APM_OVERLAYS_DIR` | Legacy single overlay library | unset |
+| default | Used when neither variable configures a library | `~/.apm/overlays/` |
 
 Set it in your shell rc, e.g.:
 
 ```bash
-export APM_OVERLAYS_DIR="$HOME/src/imenkov/apm-overlay/overlays"
+export APM_OVERLAYS_DIRS="$HOME/src/team-overlays:$HOME/src/personal-overlays"
 ```
+
+Empty entries are ignored, `~` is expanded, and duplicate paths are removed
+without changing the configured search order. Library order does not resolve
+duplicate overlay names: `show` and `install` reject ambiguity rather than
+silently choosing one.
 
 ## Exit codes
 
@@ -195,13 +214,20 @@ export APM_OVERLAYS_DIR="$HOME/src/imenkov/apm-overlay/overlays"
 
 ### "Overlays directory does not exist"
 
-`APM_OVERLAYS_DIR` is unset and `~/.apm/overlays/` does not exist. Either set
-the env var or `mkdir -p ~/.apm/overlays`.
+None of the configured libraries exists. Set `APM_OVERLAYS_DIRS` (or the
+legacy `APM_OVERLAYS_DIR`) to an existing directory, or create
+`~/.apm/overlays`.
 
 ### "Overlay '<x>' not found"
 
-The directory `<APM_OVERLAYS_DIR>/<x>/` either does not exist or has no
-`apm.yml`. Run `apm-overlay list` to see what's available.
+No configured library contains `<x>/apm.yml`. Run `apm-overlay list` to see
+what is available and where each overlay came from.
+
+### "Overlay '<x>' is ambiguous"
+
+More than one configured library contains `<x>/apm.yml`. The error lists all
+matches. Rename/remove a duplicate or adjust `APM_OVERLAYS_DIRS`; library
+ordering is intentionally not used as silent precedence.
 
 ### "Overlay '<x>' is already active"
 

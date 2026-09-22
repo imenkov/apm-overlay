@@ -4,6 +4,7 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN_DIR="${HOME}/.local/bin"
 OVERLAYS_DIR="${REPO_DIR}/overlays"
+OVERLAYS_DIRS="${APM_OVERLAYS_DIRS:-}"
 PYTHON_BIN="python3"
 SHELL_RC=""
 DRY_RUN=0
@@ -19,6 +20,7 @@ Options:
   --repo-dir PATH       Path to apm-overlay repo (default: script parent)
   --bin-dir PATH        Bin directory for launcher (default: ~/.local/bin)
   --overlays-dir PATH   APM_OVERLAYS_DIR value (default: <repo>/overlays)
+  --overlays-dirs PATHS APM_OVERLAYS_DIRS path-separated value
   --python PATH         Python executable (default: python3)
   --shell-rc PATH       Shell rc file to update (default: auto-detect)
   --dry-run             Print actions without changing files
@@ -38,6 +40,11 @@ while [[ $# -gt 0 ]]; do
       ;;
     --overlays-dir)
       OVERLAYS_DIR="$2"
+      OVERLAYS_DIRS=""
+      shift 2
+      ;;
+    --overlays-dirs)
+      OVERLAYS_DIRS="$2"
       shift 2
       ;;
     --python)
@@ -157,7 +164,11 @@ EOF
 fi
 
 append_if_missing "$(path_export_line)" "$SHELL_RC"
-append_if_missing "export APM_OVERLAYS_DIR=\"${OVERLAYS_DIR}\"" "$SHELL_RC"
+if [[ "$OVERLAYS_DIRS" == *[!:]* ]]; then
+  append_if_missing "export APM_OVERLAYS_DIRS=\"${OVERLAYS_DIRS}\"" "$SHELL_RC"
+else
+  append_if_missing "export APM_OVERLAYS_DIR=\"${OVERLAYS_DIR}\"" "$SHELL_RC"
+fi
 
 echo
 echo "Install complete."
