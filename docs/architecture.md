@@ -142,7 +142,7 @@ re-running `install` or `uninstall` after a transient failure is safe.
 3. Reject if state file already has <name> (no double-apply)
 4. Parse active apm.yml (cwd or ~/.apm/) → set A
 5. to_install = O − A             # never re-add what baseline already has
-6. apm install [-g] <to_install...>
+6. apm install --only apm [-g] <to_install...>
 7. Re-read apm.yml and validate apm.lock.yaml
 8. accepted = to_install ∩ active dependencies
 9. On complete success: record accepted as added_apm
@@ -160,7 +160,8 @@ were appended to apm.yml by THIS overlay application.
 2. claimed_by_others = ⋃ over state[k != name] of added_apm
 3. to_remove = state[name].added_apm − claimed_by_others
 4. (Inform user about packages kept because another overlay still claims them)
-5. apm uninstall [-g] <to_remove...>
+5. apm uninstall [-g] <to_remove...> (the compatibility `--target` option is
+   intentionally not forwarded because uninstall is target-agnostic)
 6. On success: delete state[name]
    On failure: state preserved → user can retry or investigate
 ```
@@ -176,7 +177,7 @@ never uninstall a package another active overlay still needs.
 | State file as source of truth (not "diff against baseline at uninstall time") | Baseline can change while overlay is active. Recording additions at install time makes undo deterministic regardless of subsequent changes. |
 | Atomic JSON writes | Cheap insurance against crashes. The "tmp+rename" pattern is the standard Unix-safe save. |
 | `-g/--global` exactly mirrors apm | Muscle memory transfers; eventual `apm overlay` subcommand would not change UX. |
-| No MCP installs in v1 | `apm install --mcp` requires different argument shape and metadata; deserves its own design pass. The tool warns rather than silently skipping. |
+| No MCP installs in v1 | `apm install --mcp` requires different argument shape and metadata; deserves its own design pass. The tool warns for direct MCP dependencies and passes `--only apm` so transitive plugin MCP servers are not configured either. |
 | Reject double-apply | Prevents the state file from drifting away from reality (would be ambiguous what to uninstall). Force-reapply was deliberately omitted in v1. |
 | Verify apm-owned state after install | `apm install` can return success while skipping a failed package. Re-reading the manifest and lockfile prevents success-shaped ownership records. |
 | Record accepted subsets as incomplete | A partially-mutated apm scope still needs deterministic undo. The command fails, but uninstall owns exactly the packages that were actually accepted. |

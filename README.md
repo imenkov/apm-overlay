@@ -106,7 +106,7 @@ apm-overlay install automation -g --target copilot
 apm-overlay status -g
 
 # Undo — only removes what THIS overlay added
-apm-overlay uninstall automation -g --target copilot
+apm-overlay uninstall automation -g
 ```
 
 Every command supports `--dry-run` for previewing and `-v` to print the exact

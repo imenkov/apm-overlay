@@ -77,8 +77,9 @@ Apply an overlay. Behavior:
    one match.
 2. Refuses if `<name>` is already active at the chosen scope.
 3. Computes `to_install = overlay.deps − active.deps` (set difference).
-4. Runs `apm install [-g] [--target <target>] <to_install...>` (single invocation; one lockfile
-   update).
+4. Runs `apm install --only apm [-g] [--target <target>] <to_install...>`
+   (single invocation; one lockfile update). `--only apm` prevents transitive
+   plugin MCP servers from modifying runtime MCP configuration.
 5. Re-reads the target `apm.yml` and validates `apm.lock.yaml`.
 6. Records only packages actually added to the target manifest. If apm exits
    successfully but skips any requested package, the command fails and records
@@ -104,14 +105,17 @@ Remove an overlay. Behavior:
 1. Refuses if the overlay is not active at the chosen scope.
 2. Computes `to_remove = state[name].added − ⋃(other_active.added)` — any
    package still claimed by another active overlay is kept.
-3. Runs `apm uninstall [-g] [--target <target>] <to_remove...>`.
+3. Runs `apm uninstall [-g] <to_remove...>`.
 4. On success, drops the state entry.
+
+The `--target` option remains accepted for compatibility with existing
+scripts, but is not forwarded because APM 0.16.1 uninstall is target-agnostic.
 
 ```bash
 # preview
-apm-overlay uninstall automation -g --target copilot --dry-run
+apm-overlay uninstall automation -g --dry-run
 # real run
-apm-overlay uninstall automation -g --target copilot -v
+apm-overlay uninstall automation -g -v
 ```
 
 When packages are skipped because another overlay still claims them, the tool
@@ -281,5 +285,6 @@ instead.
 [!] MCP overlay dependencies are not yet supported by apm-overlay; ignoring: ...
 ```
 
-v1 does not install MCP entries. Install them manually with `apm install
---mcp ...` if needed.
+v1 does not install MCP entries, including MCP servers declared transitively by
+an APM package. Overlay package installation always passes `--only apm`.
+Install MCP servers separately with `apm install --mcp ...` if needed.
