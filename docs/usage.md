@@ -79,7 +79,10 @@ Apply an overlay. Behavior:
 3. Computes `to_install = overlay.deps − active.deps` (set difference).
 4. Runs `apm install [-g] [--target <target>] <to_install...>` (single invocation; one lockfile
    update).
-5. On success, records the additions in the state file.
+5. Re-reads the target `apm.yml` and validates `apm.lock.yaml`.
+6. Records only packages actually added to the target manifest. If apm exits
+   successfully but skips any requested package, the command fails and records
+   the accepted subset as an **incomplete** overlay so uninstall remains safe.
 
 New state entries also record the resolved overlay source path. Existing state
 files without that field remain valid.
@@ -241,11 +244,14 @@ You tried to uninstall an overlay that's not in the state file. Probably the
 wrong scope flag (`-g`) or the state file was cleared. `apm-overlay status`
 to see what's actually tracked.
 
-### apm fails mid-install
+### apm fails or skips a package mid-install
 
-The tool will print the error and refuse to update the state file. Once you
-fix the underlying problem (network, auth, conflicting version, etc.),
-re-run `apm-overlay install <name>` — it is safe to retry.
+The tool verifies apm's resulting manifest and lockfile instead of trusting
+the process exit code alone. If no requested package was accepted, the state
+file is untouched. If apm accepted only a subset, that subset is recorded as
+an `INCOMPLETE` overlay and the command exits non-zero. Run
+`apm-overlay uninstall <name>` to remove the accepted subset, fix the
+underlying problem, and then retry the install.
 
 ### State file corrupted
 

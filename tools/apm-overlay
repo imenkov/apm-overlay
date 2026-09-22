@@ -21,6 +21,8 @@ import os
 import shutil
 import subprocess
 import sys
+import urllib.parse
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
@@ -74,6 +76,10 @@ def active_apm_yml(scope_global: bool) -> Path:
     return (GLOBAL_APM_DIR if scope_global else Path.cwd()) / "apm.yml"
 
 
+def active_apm_lock(scope_global: bool) -> Path:
+    return (GLOBAL_APM_DIR if scope_global else Path.cwd()) / "apm.lock.yaml"
+
+
 # ---------- io helpers ----------
 
 def load_yaml(path: Path) -> dict:
@@ -102,6 +108,84 @@ def save_state(path: Path, state: dict) -> None:
     with tmp.open("w") as f:
         json.dump(state, f, indent=2, sort_keys=True)
     tmp.replace(path)
+
+
+def lock_dependency_keys(path: Path) -> tuple[set[str], str | None]:
+    """Return canonical dependency identities from apm's lockfile."""
+    if not path.exists():
+        return set(), f"{path} was not created"
+    try:
+        data = load_yaml(path)
+    except click.ClickException as e:
+        return set(), str(e)
+    if not isinstance(data.get("dependencies"), list):
+        return set(), f"{path} has no valid dependencies list"
+
+    keys = set()
+    for dependency in data["dependencies"]:
+        if not isinstance(dependency, dict):
+            return set(), f"{path} contains a malformed dependency entry"
+        if dependency.get("source") == "local":
+            value = dependency.get("local_path")
+        else:
+            value = dependency.get("repo_url")
+            host = dependency.get("host")
+            if value and host and str(host).lower() != "github.com":
+                value = f"{host}/{value}"
+            if value and dependency.get("virtual_path"):
+                value = f"{value}/{dependency['virtual_path']}"
+        if isinstance(value, str) and value:
+            keys.add(dependency_identity_key(value))
+    return keys, None
+
+
+def added_dependencies(before: list[str], after: list[str]) -> list[str]:
+    """Return manifest entries added after install, preserving their stored form."""
+    remaining = Counter(before)
+    added = []
+    for dependency in after:
+        if remaining[dependency]:
+            remaining[dependency] -= 1
+        else:
+            added.append(dependency)
+    return added
+
+
+def dependency_comparison_key(dependency: str) -> str:
+    """Best-effort key for matching raw CLI refs to apm's canonical manifest refs."""
+    value = dependency.strip()
+    if value.startswith("git@") and ":" in value:
+        value = value.split("@", 1)[1].replace(":", "/", 1)
+    elif "://" in value:
+        parsed = urllib.parse.urlsplit(value)
+        value = f"{parsed.netloc}{parsed.path}"
+        if parsed.fragment:
+            value += f"#{parsed.fragment}"
+    value = value.rstrip("/")
+    name, separator, reference = value.partition("#")
+    if name.startswith("github.com/"):
+        name = name[len("github.com/"):]
+    if name.endswith(".git"):
+        name = name[:-4]
+    return f"{name.lower()}{separator}{reference}"
+
+
+def dependency_identity_key(dependency: str) -> str:
+    """Return a comparison key without a ref, matching lockfile identities."""
+    return dependency_comparison_key(dependency).partition("#")[0]
+
+
+def unmatched_dependencies(requested: list[str], accepted: list[str]) -> list[str]:
+    """Return requested refs that cannot be paired with an accepted manifest entry."""
+    accepted_counts = Counter(dependency_comparison_key(item) for item in accepted)
+    unmatched = []
+    for dependency in requested:
+        key = dependency_comparison_key(dependency)
+        if accepted_counts[key]:
+            accepted_counts[key] -= 1
+        else:
+            unmatched.append(dependency)
+    return unmatched
 
 
 # ---------- overlay resolution ----------
@@ -242,11 +326,16 @@ def _print_scope_status(scope_global: bool) -> None:
         added_apm = entry.get("added_apm", [])
         added_mcp = entry.get("added_mcp", [])
         source_suffix = f", source {source}" if source else ""
-        click.echo(f"  {name}  (applied {ts}{source_suffix})")
+        incomplete_apm = entry.get("incomplete_apm", [])
+        is_incomplete = entry.get("complete", True) is False or bool(incomplete_apm)
+        status_suffix = ", INCOMPLETE" if is_incomplete else ""
+        click.echo(f"  {name}  (applied {ts}{source_suffix}{status_suffix})")
         for p in added_apm:
             click.echo(f"    + apm: {p}")
         for p in added_mcp:
             click.echo(f"    + mcp: {p}")
+        for p in incomplete_apm:
+            click.echo(f"    ! skipped apm: {p}")
 
 
 @cli.command("status")
@@ -323,20 +412,51 @@ def cmd_install(name, scope_global, target, dry_run, verbose):
         args.extend(["--target", target])
     args.extend(to_install)
     rc = run_apm(args, dry_run, verbose)
-    if rc != 0:
-        raise click.ClickException(
-            f"apm install failed (exit {rc}); state file not updated."
-        )
     if dry_run:
         return
 
-    state[name] = {
-        "added_apm": to_install,
-        "added_mcp": [],
-        "applied_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "source": str(overlay.resolve()),
-    }
-    save_state(state_path, state)
+    installed_apm, _installed_mcp = extract_deps(
+        load_yaml(active_apm_yml(scope_global))
+    )
+    accepted = added_dependencies(a_apm, installed_apm)
+    skipped = unmatched_dependencies(to_install, accepted)
+    locked, lock_error = lock_dependency_keys(active_apm_lock(scope_global))
+    unlocked = [p for p in accepted if dependency_identity_key(p) not in locked]
+    if not lock_error and unlocked:
+        lock_error = "lockfile is missing accepted packages: " + ", ".join(unlocked)
+
+    if accepted:
+        entry = {
+            "added_apm": accepted,
+            "added_mcp": [],
+            "applied_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "source": str(overlay.resolve()),
+        }
+        if rc != 0 or skipped or lock_error:
+            entry["complete"] = False
+            entry["incomplete_apm"] = skipped
+            entry["install_exit_code"] = rc
+            if lock_error:
+                entry["lock_error"] = lock_error
+        state[name] = entry
+        save_state(state_path, state)
+
+    problems = []
+    if rc != 0:
+        problems.append(f"apm install exited {rc}")
+    if skipped:
+        problems.append("skipped requested packages: " + ", ".join(skipped))
+    if lock_error:
+        problems.append(lock_error)
+    if problems:
+        ownership = (
+            "Accepted packages were recorded as an incomplete overlay so they "
+            "can be safely uninstalled."
+            if accepted
+            else "No overlay state was recorded because no requested package was accepted."
+        )
+        raise click.ClickException("; ".join(problems) + ". " + ownership)
+
     click.echo(f"[*] Overlay '{name}' installed at {scope_label(scope_global)}.")
 
 
