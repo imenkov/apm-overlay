@@ -31,6 +31,7 @@ jobs:
           python tools/apm-overlay --version
           python tools/apm-overlay --help
           APM_OVERLAYS_DIR="$PWD/overlays" python tools/apm-overlay list
+          python -m unittest discover -s tests -v
 
       - name: Check for private/internal references
         run: |

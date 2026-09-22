@@ -10,6 +10,7 @@ set -eu
 #   APM_OVERLAY_REPO=owner/repo
 #   APM_OVERLAY_HOME=$HOME/.local/share/apm-overlay
 #   APM_OVERLAY_BIN_DIR=$HOME/.local/bin
+#   APM_OVERLAYS_DIRS=/path/to/team/overlays:/path/to/personal/overlays
 #   APM_OVERLAYS_DIR=$HOME/.local/share/apm-overlay/overlays
 
 BLUE='\033[0;34m'
@@ -55,13 +56,22 @@ else
   git -C "$APM_OVERLAY_HOME" checkout "origin/$VERSION_INPUT"
 fi
 
-APM_OVERLAYS_DIR="${APM_OVERLAYS_DIR:-$APM_OVERLAY_HOME/overlays}"
-
 echo "${BLUE}Running local installer...${NC}"
-bash "$APM_OVERLAY_HOME/tools/local-install.sh" \
-  --repo-dir "$APM_OVERLAY_HOME" \
-  --bin-dir "$APM_OVERLAY_BIN_DIR" \
-  --overlays-dir "$APM_OVERLAYS_DIR"
+case "${APM_OVERLAYS_DIRS:-}" in
+*[!:]*)
+  bash "$APM_OVERLAY_HOME/tools/local-install.sh" \
+    --repo-dir "$APM_OVERLAY_HOME" \
+    --bin-dir "$APM_OVERLAY_BIN_DIR" \
+    --overlays-dirs "$APM_OVERLAYS_DIRS"
+  ;;
+*)
+  APM_OVERLAYS_DIR="${APM_OVERLAYS_DIR:-$APM_OVERLAY_HOME/overlays}"
+  bash "$APM_OVERLAY_HOME/tools/local-install.sh" \
+    --repo-dir "$APM_OVERLAY_HOME" \
+    --bin-dir "$APM_OVERLAY_BIN_DIR" \
+    --overlays-dir "$APM_OVERLAYS_DIR"
+  ;;
+esac
 
 echo ""
 echo "${GREEN}Bootstrap install complete.${NC}"
