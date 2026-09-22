@@ -24,20 +24,76 @@ class ApmOverlayCliTests(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def create_overlay(
-        self, library: Path, name: str, description: str = "", dependency: str = "org/pkg"
+        self,
+        library: Path,
+        name: str,
+        description: str = "",
+        dependency: str = "org/pkg",
+        dependencies: list[str] | None = None,
     ) -> Path:
         overlay = library / name
         overlay.mkdir(parents=True)
+        dependencies = dependencies or [dependency]
+        dependency_lines = "".join(f"    - {item}\n" for item in dependencies)
         manifest = (
             f"name: {name}\n"
             f"description: {description}\n"
             "dependencies:\n"
             "  apm:\n"
-            f"    - {dependency}\n"
+            f"{dependency_lines}"
             "  mcp: []\n"
         )
         (overlay / "apm.yml").write_text(manifest)
         return overlay
+
+    def create_fake_apm(self) -> Path:
+        bin_dir = self.root / "bin"
+        bin_dir.mkdir(exist_ok=True)
+        apm = bin_dir / "apm"
+        apm.write_text(
+            """#!/usr/bin/env python3
+import os
+import sys
+from pathlib import Path
+
+import yaml
+
+args = sys.argv[1:]
+if not args or args[0] != "install":
+    raise SystemExit(0)
+
+scope = Path.home() / ".apm" if "-g" in args else Path.cwd()
+scope.mkdir(parents=True, exist_ok=True)
+packages = []
+skip_next = False
+for arg in args[1:]:
+    if skip_next:
+        skip_next = False
+    elif arg == "--target":
+        skip_next = True
+    elif not arg.startswith("-"):
+        packages.append(arg)
+
+accept_count = int(os.environ.get("FAKE_APM_ACCEPT_COUNT", len(packages)))
+accepted = packages[:accept_count]
+if os.environ.get("FAKE_APM_CANONICALIZE"):
+    accepted = [
+        package.removeprefix("https://github.com/").removesuffix(".git").lower()
+        for package in accepted
+    ]
+locked = accepted[:int(os.environ.get("FAKE_APM_LOCK_COUNT", len(accepted)))]
+(scope / "apm.yml").write_text(yaml.safe_dump({
+    "dependencies": {"apm": accepted, "mcp": []}
+}, sort_keys=False))
+(scope / "apm.lock.yaml").write_text(yaml.safe_dump({
+    "lockfile_version": "1",
+    "dependencies": [{"repo_url": package} for package in locked],
+}, sort_keys=False))
+raise SystemExit(int(os.environ.get("FAKE_APM_EXIT_CODE", "0")))
+"""
+        )
+        apm.chmod(0o755)
+        return bin_dir
 
     def run_cli(self, *args: str, cwd: Path | None = None, env: dict | None = None):
         process_env = os.environ.copy()
@@ -147,11 +203,7 @@ class ApmOverlayCliTests(unittest.TestCase):
         project.mkdir()
         (project / "apm.yml").write_text("dependencies:\n  apm: []\n  mcp: []\n")
 
-        bin_dir = self.root / "bin"
-        bin_dir.mkdir()
-        apm = bin_dir / "apm"
-        apm.write_text("#!/bin/sh\nexit 0\n")
-        apm.chmod(0o755)
+        bin_dir = self.create_fake_apm()
 
         result = self.run_cli(
             "install",
@@ -183,6 +235,124 @@ class ApmOverlayCliTests(unittest.TestCase):
         )
         self.assertEqual(legacy_uninstall.returncode, 0, legacy_uninstall.stderr)
         self.assertIn("[dry-run] apm uninstall org/legacy", legacy_uninstall.stdout)
+
+    def test_partial_success_records_only_accepted_packages_and_fails(self):
+        library = self.root / "library"
+        self.create_overlay(
+            library,
+            "partial",
+            dependencies=["https://github.com/Org/Accepted.git", "org/skipped"],
+        )
+        bin_dir = self.create_fake_apm()
+        path = os.pathsep.join([str(bin_dir), os.environ.get("PATH", "")])
+
+        for scope_global in (False, True):
+            with self.subTest(scope_global=scope_global):
+                project = self.root / ("global-project" if scope_global else "project")
+                project.mkdir()
+                args = ["install", "partial"]
+                if scope_global:
+                    args.append("-g")
+                result = self.run_cli(
+                    *args,
+                    cwd=project,
+                    env={
+                        "APM_OVERLAYS_DIRS": str(library),
+                        "PATH": path,
+                        "FAKE_APM_ACCEPT_COUNT": "1",
+                        "FAKE_APM_CANONICALIZE": "1",
+                    },
+                )
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("skipped requested packages: org/skipped", result.stderr)
+                self.assertIn("recorded as an incomplete overlay", result.stderr)
+
+                state_path = (
+                    self.home / ".apm" / "overlays.state.json"
+                    if scope_global
+                    else project / "apm.overlays.json"
+                )
+                state = json.loads(state_path.read_text())
+                self.assertEqual(state["partial"]["added_apm"], ["org/accepted"])
+                self.assertFalse(state["partial"]["complete"])
+                self.assertEqual(state["partial"]["incomplete_apm"], ["org/skipped"])
+
+                status_args = ["status"]
+                if scope_global:
+                    status_args.append("-g")
+                status = self.run_cli(*status_args, cwd=project)
+                self.assertEqual(status.returncode, 0, status.stderr)
+                self.assertIn("INCOMPLETE", status.stdout)
+                self.assertIn("+ apm: org/accepted", status.stdout)
+                self.assertIn("! skipped apm: org/skipped", status.stdout)
+
+                uninstall_args = ["uninstall", "partial", "--dry-run"]
+                if scope_global:
+                    uninstall_args.append("-g")
+                uninstall = self.run_cli(
+                    *uninstall_args,
+                    cwd=project,
+                    env={"PATH": path},
+                )
+                self.assertEqual(uninstall.returncode, 0, uninstall.stderr)
+                self.assertIn("apm uninstall", uninstall.stdout)
+                self.assertIn("org/accepted", uninstall.stdout)
+                self.assertNotIn("org/skipped", uninstall.stdout)
+
+                if scope_global:
+                    state_path.unlink()
+
+    def test_manifest_addition_missing_from_lock_is_incomplete(self):
+        library = self.root / "library"
+        self.create_overlay(library, "unlocked", dependency="org/accepted")
+        project = self.root / "project"
+        project.mkdir()
+        bin_dir = self.create_fake_apm()
+
+        result = self.run_cli(
+            "install",
+            "unlocked",
+            cwd=project,
+            env={
+                "APM_OVERLAYS_DIRS": str(library),
+                "PATH": os.pathsep.join([str(bin_dir), os.environ.get("PATH", "")]),
+                "FAKE_APM_LOCK_COUNT": "0",
+            },
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("lockfile is missing accepted packages: org/accepted", result.stderr)
+        state = json.loads((project / "apm.overlays.json").read_text())
+        self.assertEqual(state["unlocked"]["added_apm"], ["org/accepted"])
+        self.assertFalse(state["unlocked"]["complete"])
+
+    def test_dry_run_does_not_require_or_modify_apm_state(self):
+        library = self.root / "library"
+        self.create_overlay(
+            library,
+            "preview",
+            dependencies=["org/first", "org/second"],
+        )
+        project = self.root / "project"
+        project.mkdir()
+
+        result = self.run_cli(
+            "install",
+            "preview",
+            "--dry-run",
+            cwd=project,
+            env={"APM_OVERLAYS_DIRS": str(library), "PATH": ""},
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            "[dry-run] apm install org/first org/second",
+            result.stdout,
+        )
+        self.assertFalse((project / "apm.yml").exists())
+        self.assertFalse((project / "apm.lock.yaml").exists())
+        self.assertFalse((project / "apm.overlays.json").exists())
 
 
 if __name__ == "__main__":

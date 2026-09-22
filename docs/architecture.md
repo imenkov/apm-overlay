@@ -143,9 +143,11 @@ re-running `install` or `uninstall` after a transient failure is safe.
 4. Parse active apm.yml (cwd or ~/.apm/) → set A
 5. to_install = O − A             # never re-add what baseline already has
 6. apm install [-g] <to_install...>
-7. On success: state[name] = { added_apm: to_install, ..., applied_at: ts,
-                               source: resolved_overlay_path }
-   On failure: do NOT touch state
+7. Re-read apm.yml and validate apm.lock.yaml
+8. accepted = to_install ∩ active dependencies
+9. On complete success: record accepted as added_apm
+   On partial success: record only accepted as an incomplete overlay and fail
+   If nothing was accepted: fail without writing overlay state
 ```
 
 Key invariant: `state[name].added_apm` always reflects exactly which packages
@@ -176,7 +178,8 @@ never uninstall a package another active overlay still needs.
 | `-g/--global` exactly mirrors apm | Muscle memory transfers; eventual `apm overlay` subcommand would not change UX. |
 | No MCP installs in v1 | `apm install --mcp` requires different argument shape and metadata; deserves its own design pass. The tool warns rather than silently skipping. |
 | Reject double-apply | Prevents the state file from drifting away from reality (would be ambiguous what to uninstall). Force-reapply was deliberately omitted in v1. |
-| Refuse to update state on apm failure | Keeps state consistent with reality; user can always re-run the command without orphaning records. |
+| Verify apm-owned state after install | `apm install` can return success while skipping a failed package. Re-reading the manifest and lockfile prevents success-shaped ownership records. |
+| Record accepted subsets as incomplete | A partially-mutated apm scope still needs deterministic undo. The command fails, but uninstall owns exactly the packages that were actually accepted. |
 
 ## Failure modes & guarantees
 
@@ -185,7 +188,7 @@ never uninstall a package another active overlay still needs.
 | Overlay file missing | Clear error before any side effect. |
 | Duplicate overlay name | `list` marks all matches ambiguous; `show` and `install` fail and enumerate them. |
 | Some configured libraries missing | Existing libraries are searched; an error is raised only when none exist. |
-| apm install fails mid-way | apm rolls back its own changes per its design; our state file is untouched, so user can re-run `apm-overlay install`. |
+| apm install fails or skips a package mid-way | The resulting manifest and lockfile are verified. Accepted packages are recorded as an incomplete overlay for safe uninstall; if none were accepted, state is untouched. |
 | apm uninstall fails mid-way | State entry preserved → user can re-run, investigate, or manually `apm uninstall` and then edit state. |
 | State file corrupted | `apm-overlay status/install/uninstall` errors clearly with the parse error and file path. Manual fix: delete the file (loses overlay tracking; apm-owned state is unaffected). |
 | Two overlays add the same package | Both record it. Uninstalling one keeps it (still claimed). Uninstalling both removes it. |
